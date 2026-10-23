@@ -54,7 +54,7 @@ TODO:
 #define LOG_FILE_NAME "c:\\fx1_0.html"
 #include "Debug.h"
 
-#include "SinCosTable.h"
+#include "sincostable.h"
 
 #include "DtBlkFx.hpp"
 #include "FxRun1_0.h"

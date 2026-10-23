@@ -27,7 +27,7 @@ const float log_c0_hz = (float)2.7943256897071098166;
 const float inv_log_c0_hz = (float)1.442695040888963387;    // 1/logf(2)
 const float mult_next_note = (float)1.0594630943592953098;  // 2^(1/12)
 const float mult_prev_note = (float)0.94387431268169352805; // 2^(-1/12)
-extern char* note_names[12];
+extern const char* note_names[12];
 }; // namespace NoteFreq
 
 // given a note as a string, convert to hz

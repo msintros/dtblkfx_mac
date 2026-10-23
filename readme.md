@@ -28,27 +28,46 @@ It works by processing audio in the frequency domain, allowing for unique effect
 ## Building from Source
 
 ### Prerequisites
-- **CMake** (3.19+)
-- **Xcode** (or Command Line Tools)
-- **vcpkg** (included as a submodule)
+- **Xcode** or the Xcode Command Line Tools (`xcode-select --install`)
+- **CMake** 3.22 or newer (`brew install cmake`); CMake 4.x works
+- Optional: **Ninja** (`brew install ninja`) for faster builds
+- An internet connection on the first configure: FFTW 3.3.10 is downloaded from fftw.org and built
+  automatically for every architecture you target
 
-### Build Instructions
+JUCE (9.0.4) is a git submodule. vcpkg is no longer needed.
 
-1.  **Clone the repository**:
-    ```bash
-    git clone --recursive https://github.com/yourusername/dtblkfx_mac.git
-    cd dtblkfx_mac
-    ```
+### Quick build (script)
 
-2.  **Run the Universal Build Script**:
-    This script handles dependency installation (via vcpkg), building for both x86_64 and arm64, creating a universal binary, and signing it.
-    ```bash
-    ./build_universal.sh
-    ```
+```bash
+git clone --recursive <repo-url> dtblkfx_mac
+cd dtblkfx_mac
+./build_universal.sh            # Universal (Apple Silicon + Intel)
+./build_universal.sh arm64      # Apple Silicon only (faster)
+./build_universal.sh install    # Universal, then copy into ~/Library/Audio/Plug-Ins/VST3
+```
 
-3.  **Output**:
-    The built plugin will be located at:
-    `build/universal/DtBlkFx_GUI.vst3`
+### Plain CMake
+
+```bash
+git submodule update --init --recursive
+cmake -B build -DCMAKE_BUILD_TYPE=Release                 # Universal by default on macOS
+cmake --build build --config Release --parallel
+```
+
+The plug-in ends up at `build/DtBlkFx_artefacts/Release/VST3/DtBlkFx_GUI.vst3`.
+
+Useful options:
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `CMAKE_OSX_ARCHITECTURES` | `arm64;x86_64` | Use `arm64` for an Apple Silicon only build |
+| `CMAKE_OSX_DEPLOYMENT_TARGET` | `10.13` | Oldest macOS the plug-in runs on |
+| `DTBLKFX_USE_SYSTEM_FFTW` | `OFF` | Use an installed FFTW via pkg-config (e.g. `brew install fftw pkg-config`). Homebrew's FFTW is arm64-only, so pair it with `-DCMAKE_OSX_ARCHITECTURES=arm64` |
+| `DTBLKFX_COPY_PLUGIN_AFTER_BUILD` | `OFF` | Copy the VST3 to `~/Library/Audio/Plug-Ins/VST3` after each build |
+
+Xcode project: `cmake -B build-xcode -G Xcode` and open the generated project.
+
+The same CMake setup also builds on Linux (VST3 `.so` bundle) and should work on Windows.
 
 ## Usage
 - **Mix Back**: Controls the balance between the original and processed signal.

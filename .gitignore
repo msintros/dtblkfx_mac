@@ -9,8 +9,6 @@ CMakeCache.txt
 CMakeFiles/
 cmake_install.cmake
 install_manifest.txt
-*.cmake
-!modules/vcpkg/scripts/buildsystems/vcpkg.cmake
 
 # JUCE
 JuceLibraryCode/

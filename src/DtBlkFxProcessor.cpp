@@ -209,7 +209,7 @@ void DtBlkFxAudioProcessor::setCurrentProgram(int index)
 const juce::String DtBlkFxAudioProcessor::getProgramName(int index)
 {
   juce::ignoreUnused(index);
-  return {};
+  return "Default"; // VST3 hosts and the validator expect every program to have a name
 }
 
 void DtBlkFxAudioProcessor::changeProgramName(int index, const juce::String& newName)
@@ -284,8 +284,9 @@ void DtBlkFxAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer,
     buffer.clear(i, 0, buffer.getNumSamples());
 
   if (core) {
-    core->processReplacing(
-        buffer.getArrayOfWritePointers(), buffer.getArrayOfWritePointers(), buffer.getNumSamples());
+    // JUCE 7+ hands out float* const*, the VST2-era core wants float**
+    auto** channels = const_cast<float**>(buffer.getArrayOfWritePointers());
+    core->processReplacing(channels, channels, buffer.getNumSamples());
   }
 
   // Output Limiter
