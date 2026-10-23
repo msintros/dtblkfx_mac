@@ -24,13 +24,21 @@ option(DTBLKFX_USE_SYSTEM_FFTW
 option(DTBLKFX_COPY_PLUGIN_AFTER_BUILD "Copy the VST3 into the user's plug-in folder after building" OFF)
 
 #--------------------------------------------------------------------------------------------------
-# JUCE (git submodule in modules/juce)
+# JUCE: the git submodule in modules/juce if it's checked out, otherwise download the same version
 
-if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/modules/juce/CMakeLists.txt")
-    message(FATAL_ERROR
-        "JUCE is missing. Run: git submodule update --init --recursive")
+include(FetchContent)
+
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/modules/juce/CMakeLists.txt")
+    add_subdirectory(modules/juce)
+else()
+    message(STATUS "modules/juce is empty, downloading JUCE 9.0.4 "
+                   "(or run: git submodule update --init --recursive)")
+    FetchContent_Declare(juce
+        GIT_REPOSITORY https://github.com/juce-framework/JUCE.git
+        GIT_TAG 3fb5cbc0340758596dac39f7c8de47d562b4896e # 9.0.4, same commit as the submodule
+        GIT_SHALLOW FALSE)
+    FetchContent_MakeAvailable(juce)
 endif()
-add_subdirectory(modules/juce)
 
 #--------------------------------------------------------------------------------------------------
 # FFTW (single precision). DtBlkFx uses non power-of-two FFT sizes (e.g. 320, 9600, 80640), so
@@ -47,8 +55,6 @@ if(DTBLKFX_USE_SYSTEM_FFTW)
     add_library(dtblkfx_fftw3f INTERFACE)
     target_link_libraries(dtblkfx_fftw3f INTERFACE PkgConfig::FFTW3F)
 else()
-    include(FetchContent)
-
     set(DTBLKFX_FFTW_URL "https://www.fftw.org/fftw-3.3.10.tar.gz" CACHE STRING "FFTW source tarball")
     set(DTBLKFX_FFTW_SHA256 "56c932549852cddcfafdab3820b0200c7742675be92179e59e6215b340e26467"
         CACHE STRING "SHA256 of the FFTW source tarball")
