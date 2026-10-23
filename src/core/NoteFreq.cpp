@@ -22,8 +22,8 @@ This is completely free software
 using namespace std;
 
 namespace NoteFreq {
-char* note_names[] = {"c", "c#", "d", "d#", "e", "f", "f#", "g", "g#", "a", "a#", "b"};
-char* note_names_[] = {"c-", "c#", "d-", "d#", "e-", "f-", "f#", "g-", "g#", "a-", "a#", "b-"};
+const char* note_names[] = {"c", "c#", "d", "d#", "e", "f", "f#", "g", "g#", "a", "a#", "b"};
+const char* note_names_[] = {"c-", "c#", "d-", "d#", "e-", "f-", "f#", "g-", "g#", "a-", "a#", "b-"};
 
 // given a note & octave, eg "c#5" return hz
 typedef map<string, float> NoteToHzMap;

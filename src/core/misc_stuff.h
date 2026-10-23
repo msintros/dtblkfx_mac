@@ -16,6 +16,7 @@ Free software!
 #include <math.h>
 #include <stdarg.h>
 #include <stdio.h>
+#include <string.h>
 
 #ifdef _DEBUG
 #  include <iostream>
@@ -24,9 +25,9 @@ Free software!
 #ifdef _WIN32
 #  include <windows.h>
 #  include <xmmintrin.h>
-#else // assume MAC
-#  include <Accelerate/Accelerate.h>
-#  include <libkern/OSAtomic.h>
+#else // macOS / Linux
+#  include <atomic>
+#  include <thread>
 #  if defined(__x86_64__) || defined(__i386__)
 #    include <xmmintrin.h>
 #  endif
@@ -186,16 +187,17 @@ template <class T> inline bool GetProcAddress(T& result, HMODULE module, const c
   return t ? true : false;
 }
 
-#else // assume MAC OS X
+#else // macOS / Linux
 
-// wrap the MAC functions to look like windows
+// wrap the atomic builtins to look like windows (OSAtomic*32 was deprecated in macOS 10.12, and
+// only touched the low 32 bits of a 64-bit long)
 inline long InterlockedIncrement(long* v)
 {
-  return (long)OSAtomicIncrement32Barrier((int32_t*)v);
+  return __atomic_add_fetch(v, 1, __ATOMIC_SEQ_CST);
 }
 inline long InterlockedDecrement(long* v)
 {
-  return (long)OSAtomicDecrement32Barrier((int32_t*)v);
+  return __atomic_sub_fetch(v, 1, __ATOMIC_SEQ_CST);
 }
 
 inline int strnlen(const char* src, int max_n)
@@ -209,25 +211,27 @@ inline int strnlen(const char* src, int max_n)
 
 //------------------------------------------------------------------------------------------
 struct CriticalSectionWrapper
-// wrap a spinlock
+// wrap a spinlock (replaces the deprecated OSSpinLock)
 {
-  OSSpinLock sl;
-  CriticalSectionWrapper() { sl = 0; }
-  void lock() { OSSpinLockLock(&sl); }
-  void unlock() { OSSpinLockUnlock(&sl); }
-  operator OSSpinLock*() { return &sl; }
+  std::atomic_flag sl = ATOMIC_FLAG_INIT;
+  void lock()
+  {
+    while (sl.test_and_set(std::memory_order_acquire))
+      std::this_thread::yield();
+  }
+  void unlock() { sl.clear(std::memory_order_release); }
 };
 
 //------------------------------------------------------------------------------------------
 class ScopeCriticalSection {
 public:
-  OSSpinLock* sl;
-  ScopeCriticalSection(OSSpinLock* sl_)
+  CriticalSectionWrapper& sl;
+  ScopeCriticalSection(CriticalSectionWrapper& sl_)
+      : sl(sl_)
   {
-    sl = sl_;
-    OSSpinLockLock(sl_);
+    sl.lock();
   }
-  ~ScopeCriticalSection() { OSSpinLockUnlock(sl); }
+  ~ScopeCriticalSection() { sl.unlock(); }
 };
 
 #endif

@@ -49,7 +49,7 @@ HeaderComponent::HeaderComponent(juce::AudioProcessorValueTreeState& apvts)
   auto addLabel = [this](juce::Label& l, const juce::String& text) {
     addAndMakeVisible(l);
     l.setText(text, juce::dontSendNotification);
-    l.setFont(12.0f);
+    l.setFont(juce::FontOptions(12.0f));
     l.setJustificationType(juce::Justification::centred);
     l.setColour(juce::Label::textColourId, juce::Colours::white);
   };
@@ -324,7 +324,7 @@ ParameterRowComponent::ParameterRowComponent(DtBlkFxAudioProcessor& p, int index
     auto setupLabel = [&](juce::Label& l, const juce::String& text) {
       addAndMakeVisible(l);
       l.setText(text, juce::dontSendNotification);
-      l.setFont(10.0f);
+      l.setFont(juce::FontOptions(10.0f));
       l.setJustificationType(juce::Justification::centred);
       l.setColour(juce::Label::textColourId, juce::Colours::white);
     };
@@ -545,7 +545,7 @@ DtBlkFxEditor::LimiterComponent::LimiterComponent(DtBlkFxAudioProcessor& p)
   auto setupLabel = [&](juce::Label& l, const juce::String& text, juce::Component& target) {
     addAndMakeVisible(l);
     l.setText(text, juce::dontSendNotification);
-    l.setFont(12.0f);
+    l.setFont(juce::FontOptions(12.0f));
     l.setJustificationType(juce::Justification::centred);
     l.setColour(juce::Label::textColourId, juce::Colours::white);
     l.attachToComponent(&target, false);
@@ -738,30 +738,44 @@ void DtBlkFxEditor::updateInterpolation()
 
 void DtBlkFxEditor::savePreset()
 {
-  auto file = juce::File::getSpecialLocation(juce::File::userDocumentsDirectory)
-                  .getChildFile("DtBlkFx_Presets")
-                  .getNonexistentChildFile("Preset", ".xml");
+  auto dir = juce::File::getSpecialLocation(juce::File::userDocumentsDirectory)
+                 .getChildFile("DtBlkFx_Presets");
+  dir.createDirectory();
 
-  juce::FileChooser fc("Save Preset", file, "*.xml");
-  if (fc.browseForFileToSave(true)) {
-    auto xml = audioProcessor.apvts.copyState().createXml();
-    xml->writeTo(fc.getResult());
-  }
+  presetChooser = std::make_unique<juce::FileChooser>(
+      "Save Preset", dir.getNonexistentChildFile("Preset", ".xml"), "*.xml");
+
+  auto flags = juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles
+               | juce::FileBrowserComponent::warnAboutOverwriting;
+
+  presetChooser->launchAsync(flags, [this](const juce::FileChooser& fc) {
+    auto file = fc.getResult();
+    if (file == juce::File())
+      return;
+
+    if (auto xml = audioProcessor.apvts.copyState().createXml())
+      xml->writeTo(file);
+  });
 }
 
 void DtBlkFxEditor::loadPreset()
 {
-  juce::FileChooser fc("Load Preset",
-                       juce::File::getSpecialLocation(juce::File::userDocumentsDirectory)
-                           .getChildFile("DtBlkFx_Presets"),
-                       "*.xml");
+  presetChooser = std::make_unique<juce::FileChooser>(
+      "Load Preset",
+      juce::File::getSpecialLocation(juce::File::userDocumentsDirectory)
+          .getChildFile("DtBlkFx_Presets"),
+      "*.xml");
 
-  if (fc.browseForFileToOpen()) {
-    auto xml = juce::XmlDocument::parse(fc.getResult());
-    if (xml) {
+  auto flags = juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles;
+
+  presetChooser->launchAsync(flags, [this](const juce::FileChooser& fc) {
+    auto file = fc.getResult();
+    if (file == juce::File())
+      return;
+
+    if (auto xml = juce::XmlDocument::parse(file))
       audioProcessor.apvts.replaceState(juce::ValueTree::fromXml(*xml));
-    }
-  }
+  });
 }
 
 void DtBlkFxEditor::loadFactoryPreset(int index)

@@ -151,5 +151,8 @@ private:
 
   RetroLookAndFeel retroLnF;
 
+  // Plug-ins can't run modal dialogs, so the preset file chooser is async and must outlive the call
+  std::unique_ptr<juce::FileChooser> presetChooser;
+
   JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(DtBlkFxEditor)
 };

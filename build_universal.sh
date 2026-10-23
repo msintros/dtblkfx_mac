@@ -1,74 +1,55 @@
 #!/bin/bash
-set -e
+# Build DtBlkFx as a Universal (Apple Silicon + Intel) VST3 and ad-hoc sign it.
+#
+#   ./build_universal.sh            Universal binary (arm64 + x86_64)
+#   ./build_universal.sh arm64      Apple Silicon only
+#   ./build_universal.sh install    Universal, then copy to ~/Library/Audio/Plug-Ins/VST3
+set -euo pipefail
 
-# Directory setup
-PROJECT_ROOT="$(pwd)"
-BUILD_DIR="${PROJECT_ROOT}/build"
-VCPKG_ROOT="${PROJECT_ROOT}/modules/vcpkg"
+cd "$(dirname "$0")"
 
-# Ensure vcpkg is bootstrapped
-if [ ! -f "${VCPKG_ROOT}/vcpkg" ]; then
-    echo "Bootstrapping vcpkg..."
-    "${VCPKG_ROOT}/bootstrap-vcpkg.sh"
+ARCHS="arm64;x86_64"
+INSTALL=0
+for arg in "$@"; do
+    case "$arg" in
+        arm64|x86_64) ARCHS="$arg" ;;
+        install) INSTALL=1 ;;
+        *) echo "Unknown option: $arg" >&2; exit 1 ;;
+    esac
+done
+
+if [ ! -f modules/juce/CMakeLists.txt ]; then
+    git submodule update --init --recursive
 fi
 
-# Install dependencies for both architectures
-echo "Installing dependencies..."
-"${VCPKG_ROOT}/vcpkg" install fftw3:x64-osx
-"${VCPKG_ROOT}/vcpkg" install fftw3:arm64-osx
+BUILD_DIR="build"
+GENERATOR=()
+if command -v ninja >/dev/null 2>&1; then
+    GENERATOR=(-G Ninja)
+fi
 
-# Function to build for a specific architecture
-build_arch() {
-    VCPKG_ARCH=$1
-    OSX_ARCH=$2
-    
-    echo "Building for ${OSX_ARCH} (vcpkg: ${VCPKG_ARCH})..."
-    
-    ARCH_BUILD_DIR="${BUILD_DIR}/${OSX_ARCH}"
-    mkdir -p "${ARCH_BUILD_DIR}"
-    
-    cmake -B "${ARCH_BUILD_DIR}" -S "${PROJECT_ROOT}" \
-        -DCMAKE_TOOLCHAIN_FILE="${VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake" \
-        -DVCPKG_TARGET_TRIPLET="${VCPKG_ARCH}-osx" \
-        -DCMAKE_OSX_ARCHITECTURES="${OSX_ARCH}" \
-        -DCMAKE_BUILD_TYPE=Release
-        
-    cmake --build "${ARCH_BUILD_DIR}" --config Release
-}
+cmake -B "$BUILD_DIR" -S . ${GENERATOR[@]+"${GENERATOR[@]}"} \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_OSX_ARCHITECTURES="$ARCHS"
 
-# Build for both architectures
-build_arch "x64" "x86_64"
-build_arch "arm64" "arm64"
+cmake --build "$BUILD_DIR" --config Release --parallel
 
-# Create Universal Binary
-echo "Creating Universal Binary..."
-UNIVERSAL_DIR="${BUILD_DIR}/universal"
-mkdir -p "${UNIVERSAL_DIR}"
+VST3="$BUILD_DIR/DtBlkFx_artefacts/Release/VST3/DtBlkFx_GUI.vst3"
 
-# Path to the built VST3 bundles
-# Note: JUCE usually outputs to <build_dir>/DtBlkFx_artefacts/Release/VST3/DtBlkFx.vst3
-# We need to verify the exact path after the first build, but this is the standard pattern.
-VST3_PATH_X64="${BUILD_DIR}/x86_64/DtBlkFx_artefacts/Release/VST3/DtBlkFx_GUI.vst3"
-VST3_PATH_ARM64="${BUILD_DIR}/arm64/DtBlkFx_artefacts/Release/VST3/DtBlkFx_GUI.vst3"
-UNIVERSAL_VST3="${UNIVERSAL_DIR}/DtBlkFx_GUI.vst3"
+echo "Architectures:"
+lipo -info "$VST3/Contents/MacOS/DtBlkFx_GUI"
 
-# Copy the arm64 bundle as the base for the universal bundle
-cp -R "${VST3_PATH_ARM64}" "${UNIVERSAL_VST3}"
+# Ad-hoc signature so Apple Silicon will load it (JUCE signs too, this makes sure)
+codesign --force --sign - "$VST3"
 
-# Lipo the binaries
-BINARY_NAME="DtBlkFx_GUI"
-LIPO_OUTPUT="${UNIVERSAL_VST3}/Contents/MacOS/${BINARY_NAME}"
-
-lipo -create \
-    "${VST3_PATH_X64}/Contents/MacOS/${BINARY_NAME}" \
-    "${VST3_PATH_ARM64}/Contents/MacOS/${BINARY_NAME}" \
-    -output "${LIPO_OUTPUT}"
-
-echo "Universal Binary created at: ${UNIVERSAL_VST3}"
-lipo -info "${LIPO_OUTPUT}"
-
-# Code signing (ad-hoc)
-echo "Code signing..."
-codesign --force --deep --sign - "${UNIVERSAL_VST3}"
-
-echo "Build complete!"
+if [ "$INSTALL" = 1 ]; then
+    DEST="$HOME/Library/Audio/Plug-Ins/VST3"
+    mkdir -p "$DEST"
+    rm -rf "$DEST/DtBlkFx_GUI.vst3"
+    cp -R "$VST3" "$DEST/"
+    # Remove the quarantine flag in case the source was downloaded through a browser
+    xattr -dr com.apple.quarantine "$DEST/DtBlkFx_GUI.vst3" 2>/dev/null || true
+    echo "Installed to $DEST/DtBlkFx_GUI.vst3"
+else
+    echo "Built: $VST3"
+fi
