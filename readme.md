@@ -64,6 +64,7 @@ Useful options:
 | `CMAKE_OSX_DEPLOYMENT_TARGET` | `10.13` | Oldest macOS the plug-in runs on |
 | `DTBLKFX_USE_SYSTEM_FFTW` | `OFF` | Use an installed FFTW via pkg-config (e.g. `brew install fftw pkg-config`). Homebrew's FFTW is arm64-only, so pair it with `-DCMAKE_OSX_ARCHITECTURES=arm64` |
 | `DTBLKFX_COPY_PLUGIN_AFTER_BUILD` | `OFF` | Copy the VST3 to `~/Library/Audio/Plug-Ins/VST3` after each build |
+| `DTBLKFX_BUILD_TESTS` | `OFF` | Build `DtBlkFxProcessTest`, an offline check of the audio path and limiter (`--screenshot ui.png` renders the editor) |
 
 Xcode project: `cmake -B build-xcode -G Xcode` and open the generated project.
 

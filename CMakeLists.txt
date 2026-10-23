@@ -156,3 +156,19 @@ target_link_libraries(DtBlkFx
     PUBLIC
         juce::juce_recommended_config_flags
         juce::juce_recommended_lto_flags)
+
+#--------------------------------------------------------------------------------------------------
+# Offline processing test (not part of the plug-in)
+
+option(DTBLKFX_BUILD_TESTS "Build the offline processing test" OFF)
+if(DTBLKFX_BUILD_TESTS)
+    add_executable(DtBlkFxProcessTest tests/ProcessTest.cpp)
+    # Reuse the plug-in's compiled JUCE modules: take its include paths and definitions rather
+    # than linking the JUCE module targets again (that would compile JUCE a second time).
+    target_include_directories(DtBlkFxProcessTest PRIVATE
+        $<TARGET_PROPERTY:DtBlkFx,INCLUDE_DIRECTORIES>)
+    target_compile_definitions(DtBlkFxProcessTest PRIVATE
+        $<TARGET_PROPERTY:DtBlkFx,COMPILE_DEFINITIONS>)
+    target_compile_features(DtBlkFxProcessTest PRIVATE cxx_std_17)
+    target_link_libraries(DtBlkFxProcessTest PRIVATE DtBlkFx dtblkfx_fftw3f)
+endif()

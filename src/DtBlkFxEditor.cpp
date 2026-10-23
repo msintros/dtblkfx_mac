@@ -15,7 +15,7 @@ HeaderComponent::HeaderComponent(juce::AudioProcessorValueTreeState& apvts)
   auto setupTopSlider = [&](juce::Slider& s) {
     addAndMakeVisible(s);
     s.setSliderStyle(juce::Slider::LinearHorizontal);
-    s.setTextBoxStyle(juce::Slider::TextBoxBelow, false, 50, 15);
+    s.setTextBoxStyle(juce::Slider::TextBoxBelow, false, 60, 15);
   };
 
   // Mix & Power Match
@@ -187,10 +187,10 @@ void HeaderComponent::paint(juce::Graphics& g)
   g.fillAll(juce::Colours::black.withAlpha(0.2f));
 
   if (logo.isValid()) {
-    int logoH = 60;
+    int logoH = 44;
     int logoW = logo.getWidth() * logoH / logo.getHeight();
     int logoX = (getWidth() - logoW) / 2;
-    g.drawImage(logo, logoX, 10, logoW, logoH, 0, 0, logo.getWidth(), logo.getHeight());
+    g.drawImage(logo, logoX, 8, logoW, logoH, 0, 0, logo.getWidth(), logo.getHeight());
   }
   else {
     g.setColour(juce::Colours::red);
@@ -206,7 +206,7 @@ void HeaderComponent::resized()
   auto area = getLocalBounds().reduced(5);
 
   // Reserve space for logo
-  area.removeFromTop(80); // Logo height (60) + padding (20)
+  area.removeFromTop(56); // Logo height (44) + padding
 
   int w = area.getWidth() / 4;
 
@@ -264,8 +264,8 @@ ParameterRowComponent::ParameterRowComponent(DtBlkFxAudioProcessor& p, int index
     else
       s.setSliderStyle(juce::Slider::LinearHorizontal);
 
-    s.setTextBoxStyle(
-        juce::Slider::TextBoxBelow, false, 50, 14); // Wider and slightly taller text box
+    // wide enough for "850 Hz", "12.5 kHz" and "-60.0 dB" without being cut short
+    s.setTextBoxStyle(juce::Slider::TextBoxBelow, false, isKnob ? 68 : 90, 14);
   };
 
   setupSlider(freqASlider, "param_" + juce::String(baseIndex + 0), false); // Slider
@@ -276,8 +276,9 @@ ParameterRowComponent::ParameterRowComponent(DtBlkFxAudioProcessor& p, int index
   // Fine Slider (Not attached to parameter directly)
   addAndMakeVisible(valFineSlider);
   valFineSlider.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
-  valFineSlider.setTextBoxStyle(juce::Slider::TextBoxBelow, false, 40, 14);
+  valFineSlider.setTextBoxStyle(juce::Slider::TextBoxBelow, false, 58, 14);
   valFineSlider.setRange(-0.1, 0.1, 0.001);
+  valFineSlider.setNumDecimalPlacesToDisplay(3);
   valFineSlider.setValue(0.0);
   valFineSlider.setTextValueSuffix("");
   valFineSlider.setDoubleClickReturnValue(true, 0.0);
@@ -355,6 +356,8 @@ ParameterRowComponent::ParameterRowComponent(DtBlkFxAudioProcessor& p, int index
   ampSlider.textFromValueFunction = [this, index](double value) {
     if (processor.core) {
       float db = BlkFxParam::getEffectAmp((float)value);
+      if (std::abs(db) < 0.05f)
+        db = 0.0f; // avoid "-0.0 dB"
       return juce::String(db, 1) + " dB";
     }
     return juce::String(value, 2);
@@ -363,13 +366,19 @@ ParameterRowComponent::ParameterRowComponent(DtBlkFxAudioProcessor& p, int index
   // Freq A/B Display (0-22kHz)
   auto freqDisplay = [this](double value) {
     float hz = BlkFxParam::getHz((float)value);
+    // juce::String(float, 0) means "default precision", which printed "215.286 Hz"
     if (hz < 1000.0f)
-      return juce::String(hz, 0) + " Hz";
+      return juce::String(juce::roundToInt(hz)) + " Hz";
     else
       return juce::String(hz / 1000.0f, 1) + " kHz";
   };
   freqASlider.textFromValueFunction = freqDisplay;
   freqBSlider.textFromValueFunction = freqDisplay;
+
+  // the attachments set the values before the formatters existed
+  freqASlider.updateText();
+  freqBSlider.updateText();
+  ampSlider.updateText();
   // Lock Button
   addAndMakeVisible(lockButton);
   lockButton.setButtonText("Lock");
@@ -433,87 +442,52 @@ void ParameterRowComponent::paint(juce::Graphics& g)
 void ParameterRowComponent::resized()
 {
   auto area = getLocalBounds().reduced(2);
-  int w = area.getWidth() / 6; // 6 columns
 
-  // Column 0: Buttons (On/Lock)
-  auto btnArea = area.removeFromLeft(w).reduced(2);
+  // column widths as fractions of the row: buttons, Freq A, Freq B, Amp, Type, Val, Fine
+  const float weights[] = {0.09f, 0.20f, 0.20f, 0.11f, 0.19f, 0.11f, 0.10f};
+  const int totalWidth = area.getWidth();
+  auto column = [&](int i) { return area.removeFromLeft(juce::roundToInt(weights[i] * totalWidth)); };
 
-  // Center vertically
+  // Column 0: On above Lock, centred vertically
+  auto btnArea = column(0).reduced(4, 0);
   int btnHeight = 24;
-  int btnY = btnArea.getY() + (btnArea.getHeight() - btnHeight) / 2;
+  auto stack = btnArea.withSizeKeepingCentre(btnArea.getWidth(), btnHeight * 2);
+  onOffButton.setBounds(stack.removeFromTop(btnHeight));
+  lockButton.setBounds(stack);
 
-  // If row 0, adjust for label alignment (sliders have labels at top)
-  // Sliders take full height, labels are top 12px.
-  // Let's just center them in the available space.
+  auto layoutItem = [&](juce::Rectangle<int> r, juce::Component& ctrl, juce::Label* label) {
+    r = r.reduced(2, 0);
 
-  auto rowRect = btnArea.withY(btnY).withHeight(btnHeight);
-  onOffButton.setBounds(rowRect.removeFromLeft(40));
-  lockButton.setBounds(rowRect.removeFromRight(50));
-
-  auto layoutItem = [&](juce::Component& ctrl, juce::Label* label) {
-    auto r = area.removeFromLeft(w).reduced(2);
-
-    // Always reserve space for label/spacer to keep alignment consistent across rows
+    // Always reserve space for the label so the controls line up across rows
     auto labelArea = r.removeFromTop(12);
-    if (rowIndex == 0 && label) {
+    if (rowIndex == 0 && label)
       label->setBounds(labelArea);
-    }
 
     if (auto* slider = dynamic_cast<juce::Slider*>(&ctrl)) {
       if (slider->getSliderStyle() == juce::Slider::LinearHorizontal) {
-        // Slider: use full remaining space so TextBoxBelow aligns with knobs
         slider->setBounds(r);
       }
       else {
-        // Knob: keep square aspect ratio, but ensure it sits at the bottom or fills height
-        // to align text boxes with sliders.
-        int knobSize = juce::jmin(r.getWidth(), r.getHeight());
-        // Center horizontally, but keep vertical fill to align text
-        slider->setBounds(r.withWidth(knobSize).withX(r.getX() + (r.getWidth() - knobSize) / 2));
+        // Knob: full height so the text box lines up with the sliders', never narrower than it
+        int knobWidth = juce::jmax(slider->getTextBoxWidth(), juce::jmin(r.getWidth(), r.getHeight()));
+        knobWidth = juce::jmin(knobWidth, r.getWidth());
+        slider->setBounds(r.withSizeKeepingCentre(knobWidth, r.getHeight()));
       }
     }
     else {
-      // ComboBox (Type)
-      // Visual height is approx r.getHeight() - 14.
+      // ComboBox (Type), centred on the knobs' dials
       int dropdownHeight = 24;
       int visualHeight = r.getHeight() - 14;
-      int y = r.getY() + (visualHeight - dropdownHeight) / 2;
-      ctrl.setBounds(r.getX(), y, r.getWidth(), dropdownHeight);
+      ctrl.setBounds(r.getX(), r.getY() + (visualHeight - dropdownHeight) / 2, r.getWidth(), dropdownHeight);
     }
   };
 
-  layoutItem(freqASlider, &freqALabel);
-  layoutItem(freqBSlider, &freqBLabel);
-  layoutItem(ampSlider, &ampLabel);
-  layoutItem(typeBox, nullptr);
-
-  // Split last column for Val and Fine
-  auto valArea = area.removeFromLeft(w).reduced(2);
-
-  // Split valArea into Coarse (70%) and Fine (30%)
-  int fineWidth = valArea.getWidth() * 0.35f;
-  int coarseWidth = valArea.getWidth() - fineWidth;
-
-  auto coarseRect = valArea.removeFromLeft(coarseWidth);
-  auto fineRect = valArea;
-
-  // Layout Coarse
-  auto coarseLabelArea = coarseRect.removeFromTop(12);
-  if (rowIndex == 0)
-    valLabel.setBounds(coarseLabelArea);
-
-  int coarseKnobSize = juce::jmin(coarseRect.getWidth(), coarseRect.getHeight());
-  valSlider.setBounds(coarseRect.withWidth(coarseKnobSize)
-                          .withX(coarseRect.getX() + (coarseRect.getWidth() - coarseKnobSize) / 2));
-
-  // Layout Fine
-  auto fineLabelArea = fineRect.removeFromTop(12);
-  if (rowIndex == 0)
-    valFineLabel.setBounds(fineLabelArea);
-
-  int fineKnobSize = juce::jmin(fineRect.getWidth(), fineRect.getHeight());
-  valFineSlider.setBounds(fineRect.withWidth(fineKnobSize)
-                              .withX(fineRect.getX() + (fineRect.getWidth() - fineKnobSize) / 2));
+  layoutItem(column(1), freqASlider, &freqALabel);
+  layoutItem(column(2), freqBSlider, &freqBLabel);
+  layoutItem(column(3), ampSlider, &ampLabel);
+  layoutItem(column(4), typeBox, nullptr);
+  layoutItem(column(5), valSlider, &valLabel);
+  layoutItem(area, valFineSlider, &valFineLabel);
 }
 
 //==============================================================================
@@ -528,13 +502,16 @@ DtBlkFxEditor::LimiterComponent::LimiterComponent(DtBlkFxAudioProcessor& p)
                          const juce::String& suffix) {
     addAndMakeVisible(s);
     s.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
-    s.setTextBoxStyle(juce::Slider::TextBoxBelow, false, 50, 14);
+    s.setTextBoxStyle(juce::Slider::TextBoxBelow, false, 70, 14);
     s.setTextValueSuffix(suffix);
   };
 
   setupSlider(ceilingSlider, DtBlkFxAudioProcessor::limiterCeilingId, "Ceiling", " dB");
+  ceilingSlider.setTooltip("Maximum output level");
   setupSlider(gainSlider, DtBlkFxAudioProcessor::limiterGainId, "Gain", " dB");
+  gainSlider.setTooltip("Drive into the limiter");
   setupSlider(releaseSlider, DtBlkFxAudioProcessor::limiterReleaseId, "Release", " ms");
+  releaseSlider.setTooltip("How fast the gain recovers after a peak");
 
   addAndMakeVisible(enableButton);
   enableButton.setButtonText("Limiter");
@@ -571,19 +548,95 @@ void DtBlkFxEditor::LimiterComponent::paint(juce::Graphics& g)
   g.fillAll(juce::Colours::white.withAlpha(0.05f));
   g.setColour(juce::Colours::white.withAlpha(0.2f));
   g.drawRect(getLocalBounds(), 1);
+
+  // gain reduction meter under the enable button
+  auto meter = enableButton.getBounds().translated(0, enableButton.getHeight() + 6).withHeight(8).toFloat();
+  g.setColour(juce::Colours::black);
+  g.fillRect(meter);
+  float frac = juce::jlimit(0.0f, 1.0f, -shownReductionDb / 24.0f);
+  g.setColour(juce::Colours::orange);
+  g.fillRect(meter.withWidth(meter.getWidth() * frac));
+  g.setColour(juce::Colours::white.withAlpha(0.7f));
+  g.setFont(juce::FontOptions(10.0f));
+  g.drawText("GR " + juce::String(shownReductionDb, 1) + " dB",
+             meter.translated(0, 9).withHeight(12), juce::Justification::centredLeft, false);
+}
+
+void DtBlkFxEditor::LimiterComponent::updateMeter()
+{
+  float gr = enableButton.getToggleState() ? processor.limiter.getGainReductionDb() : 0.0f;
+  // fast attack, slow decay so short peaks stay visible
+  shownReductionDb = gr < shownReductionDb ? gr : shownReductionDb + 0.15f * (gr - shownReductionDb);
+  repaint();
 }
 
 void DtBlkFxEditor::LimiterComponent::resized()
 {
-  auto area = getLocalBounds().reduced(10);
+  auto area = getLocalBounds().reduced(8, 6);
 
-  // Layout: [Enable] [Gain] [Ceiling] [Release]
+  // Layout: [Enable + meter] [Gain] [Ceiling] [Release], labels sit above the knobs
   int w = area.getWidth() / 4;
 
-  enableButton.setBounds(area.removeFromLeft(w).reduced(10, 20));
-  gainSlider.setBounds(area.removeFromLeft(w).reduced(5));
-  ceilingSlider.setBounds(area.removeFromLeft(w).reduced(5));
-  releaseSlider.setBounds(area.removeFromLeft(w).reduced(5));
+  enableButton.setBounds(area.removeFromLeft(w).reduced(4, 0).withHeight(24).translated(0, 10));
+  area.removeFromTop(14);
+  gainSlider.setBounds(area.removeFromLeft(w).reduced(4, 0));
+  ceilingSlider.setBounds(area.removeFromLeft(w).reduced(4, 0));
+  releaseSlider.setBounds(area.removeFromLeft(w).reduced(4, 0));
+}
+
+//==============================================================================
+static const juce::Identifier vizGainId("visualizerGain");
+static const juce::Identifier vizRangeId("visualizerRange");
+
+DtBlkFxEditor::VisualizerControls::VisualizerControls(DtBlkFxEditor& e)
+    : owner(e)
+{
+  auto& state = owner.audioProcessor.apvts.state;
+
+  auto setup = [&](juce::Slider& s, juce::Label& l, const juce::String& name, const juce::String& tip,
+                   double lo, double hi, double def, const juce::Identifier& id) {
+    addAndMakeVisible(s);
+    s.setSliderStyle(juce::Slider::LinearHorizontal);
+    s.setTextBoxStyle(juce::Slider::TextBoxRight, false, 56, 18);
+    s.setRange(lo, hi, 0.5);
+    s.setTextValueSuffix(" dB");
+    s.setDoubleClickReturnValue(true, def);
+    s.setValue((double)state.getProperty(id, def), juce::dontSendNotification);
+    s.setTooltip(tip);
+    s.onValueChange = [this, &s, id] {
+      owner.audioProcessor.apvts.state.setProperty(id, s.getValue(), nullptr);
+      owner.applyVisualizerLevels();
+    };
+
+    addAndMakeVisible(l);
+    l.setText(name, juce::dontSendNotification);
+    l.setFont(juce::FontOptions(12.0f));
+    l.setJustificationType(juce::Justification::centredRight);
+  };
+
+  setup(gainSlider, gainLabel, "Brightness", "Raise to see quieter detail (double-click to reset)",
+        -30.0, 40.0, 0.0, vizGainId);
+  setup(rangeSlider, rangeLabel, "Contrast", "Range from dark to bright, lower = more contrast",
+        20.0, 120.0, 66.0, vizRangeId);
+}
+
+void DtBlkFxEditor::VisualizerControls::resized()
+{
+  auto area = getLocalBounds();
+  auto left = area.removeFromLeft(area.getWidth() / 2);
+  gainLabel.setBounds(left.removeFromLeft(72));
+  gainSlider.setBounds(left.reduced(4, 2));
+  rangeLabel.setBounds(area.removeFromLeft(72));
+  rangeSlider.setBounds(area.reduced(4, 2));
+}
+
+void DtBlkFxEditor::applyVisualizerLevels()
+{
+  // the original plug-in showed -80 dB .. -14 dB; Brightness lowers the floor
+  float range = (float)visualizerControls.rangeSlider.getValue();
+  float top = -14.0f - (float)visualizerControls.gainSlider.getValue();
+  inputSpectrogram.setLevels(top - range, range);
+  outputSpectrogram.setLevels(top - range, range);
 }
 
 //==============================================================================
@@ -817,31 +870,40 @@ DtBlkFxEditor::DtBlkFxEditor(DtBlkFxAudioProcessor& p)
     : AudioProcessorEditor(&p)
     , audioProcessor(p)
     , header(p.apvts)
-    , inputSpectrogram("Input Left")
-    , outputSpectrogram("Output Left")
     , footer(*this)
     , limiter(p)
+    , inputSpectrogram("Input")
+    , outputSpectrogram("Output")
+    , visualizerControls(*this)
 {
   setLookAndFeel(&retroLnF);
 
-  addAndMakeVisible(header);
-  addAndMakeVisible(inputSpectrogram);
-  addAndMakeVisible(outputSpectrogram);
-  addAndMakeVisible(footer);
-  addAndMakeVisible(limiter);
-
-  // Channel Selectors Removed
-  inputSpectrogram.setLabel("Input L+R");
-  outputSpectrogram.setLabel("Output L+R");
+  addAndMakeVisible(content);
+  content.addAndMakeVisible(header);
+  content.addAndMakeVisible(inputSpectrogram);
+  content.addAndMakeVisible(outputSpectrogram);
+  content.addAndMakeVisible(visualizerControls);
+  content.addAndMakeVisible(footer);
+  content.addAndMakeVisible(limiter);
 
   for (int i = 0; i < 8; ++i) {
     auto row = std::make_unique<ParameterRowComponent>(p, i);
-    addAndMakeVisible(*row);
+    content.addAndMakeVisible(*row);
     paramRows.push_back(std::move(row));
   }
 
-  // Increased height to fit all rows + limiter
-  setSize(600, 1040); // 960 + 80 for limiter
+  applyVisualizerLevels();
+
+  content.setSize(designWidth, designHeight);
+  layoutContent();
+
+  // Wide layout that fits a laptop screen; drag the corner to scale it
+  setResizable(true, true);
+  setResizeLimits(designWidth * 6 / 10, designHeight * 6 / 10, designWidth * 2, designHeight * 2);
+  if (auto* c = getConstrainer())
+    c->setFixedAspectRatio((double)designWidth / (double)designHeight);
+  setSize(designWidth, designHeight);
+
   startTimerHz(60);
 }
 
@@ -854,19 +916,18 @@ DtBlkFxEditor::~DtBlkFxEditor()
 
 void DtBlkFxEditor::timerCallback()
 {
-  if (audioProcessor.newInputSpectrogramDataAvailable) {
-    juce::ScopedLock lock(audioProcessor.inputSpectrogramLock);
-    inputSpectrogram.processPendingData(audioProcessor.inputSpectrogramData.data(),
-                                        (int)audioProcessor.inputSpectrogramData.size());
-    audioProcessor.newInputSpectrogramDataAvailable = false;
-  }
+  const double sr = audioProcessor.getSampleRate();
+  inputSpectrogram.setSampleRate(sr);
+  outputSpectrogram.setSampleRate(sr);
 
-  if (audioProcessor.newOutputSpectrogramDataAvailable) {
-    juce::ScopedLock lock(audioProcessor.outputSpectrogramLock);
-    outputSpectrogram.processPendingData(audioProcessor.outputSpectrogramData.data(),
-                                         (int)audioProcessor.outputSpectrogramData.size());
-    audioProcessor.newOutputSpectrogramDataAvailable = false;
-  }
+  if (audioProcessor.inputSpectrum.pull(spectrumScratch) > 0)
+    inputSpectrogram.pushSpectrum(spectrumScratch);
+  if (audioProcessor.outputSpectrum.pull(spectrumScratch) > 0)
+    outputSpectrogram.pushSpectrum(spectrumScratch);
+
+  inputSpectrogram.advance();
+  outputSpectrogram.advance();
+  limiter.updateMeter();
 
   updateInterpolation();
 }
@@ -878,27 +939,30 @@ void DtBlkFxEditor::paint(juce::Graphics& g)
 
 void DtBlkFxEditor::resized()
 {
-  auto area = getLocalBounds();
+  const float scale = (float)getWidth() / (float)designWidth;
+  content.setTransform(juce::AffineTransform::scale(scale));
+}
 
-  header.setBounds(area.removeFromTop(165)); // Increased header height for logo + locks
+void DtBlkFxEditor::layoutContent()
+{
+  // Left: title + global controls, spectrograms, presets, limiter. Right: the 8 effect rows.
+  auto area = content.getLocalBounds();
+  auto left = area.removeFromLeft(440);
+  auto right = area.reduced(6, 6);
 
-  // Limiter at the very bottom
-  limiter.setBounds(area.removeFromBottom(80));
+  header.setBounds(left.removeFromTop(150));
+  limiter.setBounds(left.removeFromBottom(96).reduced(6, 4));
+  footer.setBounds(left.removeFromBottom(44));
 
-  footer.setBounds(area.removeFromBottom(60));
+  auto specArea = left.reduced(6, 4);
+  visualizerControls.setBounds(specArea.removeFromBottom(26));
+  specArea.removeFromBottom(4);
+  int laneHeight = (specArea.getHeight() - 6) / 2;
+  inputSpectrogram.setBounds(specArea.removeFromTop(laneHeight));
+  specArea.removeFromTop(6);
+  outputSpectrogram.setBounds(specArea.removeFromTop(laneHeight));
 
-  int specHeight = 80;                                     // Shortened spectrograms
-  auto specArea = area.removeFromTop(specHeight * 2 + 10); // Reduced padding
-
-  // inputChannelSelector removed
-  inputSpectrogram.setBounds(specArea.removeFromTop(specHeight));
-  specArea.removeFromTop(10); // Spacing
-
-  // outputChannelSelector removed
-  outputSpectrogram.setBounds(specArea.removeFromTop(specHeight));
-
-  int rowHeight = 70; // Reduced row height
-  for (auto& row : paramRows) {
-    row->setBounds(area.removeFromTop(rowHeight));
-  }
+  int rowHeight = right.getHeight() / (int)paramRows.size();
+  for (auto& row : paramRows)
+    row->setBounds(right.removeFromTop(rowHeight));
 }

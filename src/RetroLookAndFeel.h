@@ -18,7 +18,7 @@ public:
   {
     setColour(juce::Slider::thumbColourId, juce::Colours::red.withAlpha(0.8f));
     setColour(juce::Slider::trackColourId, juce::Colours::darkgrey);
-    setColour(juce::Slider::backgroundColourId, juce::Colours::black);
+    setColour(juce::Slider::backgroundColourId, juce::Colour(0xff262626)); // visible track on black
 
     setColour(juce::ComboBox::backgroundColourId, juce::Colours::black.withAlpha(0.6f));
     setColour(juce::ComboBox::outlineColourId, juce::Colours::red.withAlpha(0.5f));
