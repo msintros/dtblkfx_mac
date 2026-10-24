@@ -86,3 +86,4 @@ This project is licensed under the GNU General Public License v2.0 (or later). S
 ## Credits
 - **Original Author**: Darrell Tam
 - **macOS/JUCE Port**: haiori
+- **macOS Silicon update and UI re-design**:  Michael Sintros & Claude.ai
