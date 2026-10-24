@@ -1160,18 +1160,19 @@ inline void DtBlkFx::doFFT()
 
     CplxfPtrPair in(FFTdata(i), _freq_fft_n / 2 + 1);
 
-    // Extract spectrogram data for channel 0
-    // Extract spectrogram data for channel 0
-    if (i == 0 && inputSpectrogramCallback) {
-      if (_spectrogram_buffer.size() != _freq_fft_n / 2 + 1)
-        _spectrogram_buffer.resize(_freq_fft_n / 2 + 1);
+    // Spectrogram data: power per bin summed over the channels
+    if (inputSpectrogramCallback) {
+      if (_spectrogram_buffer.size() < MAX_FFT_SZ / 2 + 1)
+        _spectrogram_buffer.resize(MAX_FFT_SZ / 2 + 1);
 
       float* spec_out = _spectrogram_buffer.data();
       CplxfPtrPair spec_in(FFTdata(i), _freq_fft_n / 2 + 1);
       for (; !spec_in.equal(); spec_in.a++, spec_out++) {
-        *spec_out = norm(*spec_in.a * scale); // Pass magnitude squared
+        float pwr = norm(*spec_in.a * scale);
+        *spec_out = i == 0 ? pwr : *spec_out + pwr;
       }
-      inputSpectrogramCallback(_spectrogram_buffer.data(), _freq_fft_n / 2 + 1);
+      if (i == AUDIO_CHANNELS - 1)
+        inputSpectrogramCallback(_spectrogram_buffer.data(), _freq_fft_n / 2 + 1);
     }
 
     for (; !in.equal(); in.a++) {
@@ -1639,18 +1640,18 @@ inline void DtBlkFx::_process(float** in_buf, long buf_n)
 
       procFFT();
 
-      // Output Spectrogram (Channel 0)
+      // Output spectrogram: power per bin summed over the channels (FFT data is already scaled)
       if (outputSpectrogramCallback) {
-        int i = 0;                               // Left channel
-        float scale = 1.0f / (float)_freq_fft_n; // Re-calculate scale as it's local in doFFT
+        if (_spectrogram_buffer.size() < MAX_FFT_SZ / 2 + 1)
+          _spectrogram_buffer.resize(MAX_FFT_SZ / 2 + 1);
 
-        if (_spectrogram_buffer.size() != _freq_fft_n / 2 + 1)
-          _spectrogram_buffer.resize(_freq_fft_n / 2 + 1);
-
-        float* spec_out = _spectrogram_buffer.data();
-        CplxfPtrPair spec_in(FFTdata(i), _freq_fft_n / 2 + 1);
-        for (; !spec_in.equal(); spec_in.a++, spec_out++) {
-          *spec_out = norm(*spec_in.a); // Pass magnitude squared (energy) to UI
+        for (int i = 0; i < AUDIO_CHANNELS; i++) {
+          float* spec_out = _spectrogram_buffer.data();
+          CplxfPtrPair spec_in(FFTdata(i), _freq_fft_n / 2 + 1);
+          for (; !spec_in.equal(); spec_in.a++, spec_out++) {
+            float pwr = norm(*spec_in.a);
+            *spec_out = i == 0 ? pwr : *spec_out + pwr;
+          }
         }
         outputSpectrogramCallback(_spectrogram_buffer.data(), _freq_fft_n / 2 + 1);
       }

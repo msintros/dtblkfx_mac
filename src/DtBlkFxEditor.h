@@ -115,11 +115,13 @@ public:
 
     void paint(juce::Graphics& g) override;
     void resized() override;
+    void updateMeter(); // called from the editor's timer
 
     DtBlkFxAudioProcessor& processor;
     juce::Slider ceilingSlider, gainSlider, releaseSlider;
     juce::ToggleButton enableButton;
     juce::Label ceilingLabel, gainLabel, releaseLabel;
+    float shownReductionDb = 0.0f;
 
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> ceilingAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> gainAttachment;
@@ -127,8 +129,25 @@ public:
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> enableAttachment;
   };
 
+  // Brightness/contrast of the spectrograms, saved with the plug-in state
+  struct VisualizerControls : public juce::Component {
+    VisualizerControls(DtBlkFxEditor& editor);
+    void resized() override;
+
+    DtBlkFxEditor& owner;
+    juce::Slider gainSlider, rangeSlider;
+    juce::Label gainLabel, rangeLabel;
+  };
+
+  // size the layout is designed at; the window scales from it
+  static constexpr int designWidth = 1180;
+  static constexpr int designHeight = 700;
+
 private:
   DtBlkFxAudioProcessor& audioProcessor;
+
+  // everything lives in here at design size and is scaled to the window
+  juce::Component content;
 
   HeaderComponent header;
   FooterComponent footer;
@@ -136,6 +155,11 @@ private:
 
   SpectrogramComponent inputSpectrogram;
   SpectrogramComponent outputSpectrogram;
+  VisualizerControls visualizerControls;
+  std::vector<float> spectrumScratch;
+
+  void applyVisualizerLevels();
+  void layoutContent();
 
   // Interpolation State
   bool isInterpolating = false;
@@ -143,9 +167,6 @@ private:
   double interpolationDuration = 0.0;
   std::map<juce::String, float> startValues;
   std::map<juce::String, float> targetValues;
-
-  juce::ComboBox inputChannelSelector;
-  juce::ComboBox outputChannelSelector;
 
   std::vector<std::unique_ptr<ParameterRowComponent>> paramRows;
 

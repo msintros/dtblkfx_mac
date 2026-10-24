@@ -42,11 +42,14 @@ DtBlkFxAudioProcessor::DtBlkFxAudioProcessor()
   core->setSampleRate(getSampleRate());
   core->setBlockSize(getBlockSize());
 
+  inputSpectrum.bins.resize(MAX_FFT_SZ / 2 + 1);
+  outputSpectrum.bins.resize(MAX_FFT_SZ / 2 + 1);
+
   core->inputSpectrogramCallback = [this](const float* data, int numBins) {
-    pushInputSpectrogramData(data, numBins);
+    inputSpectrum.push(data, numBins);
   };
   core->outputSpectrogramCallback = [this](const float* data, int numBins) {
-    pushOutputSpectrogramData(data, numBins);
+    outputSpectrum.push(data, numBins);
   };
 
   // Add listeners
@@ -225,13 +228,7 @@ void DtBlkFxAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock
     core->resume();
   }
 
-  juce::dsp::ProcessSpec spec;
-  spec.sampleRate = sampleRate;
-  spec.maximumBlockSize = (juce::uint32)samplesPerBlock;
-  spec.numChannels = (juce::uint32)getTotalNumOutputChannels();
-
-  limiter.prepare(spec);
-  limiter.reset();
+  limiter.prepare(sampleRate);
 }
 
 void DtBlkFxAudioProcessor::releaseResources()
@@ -290,23 +287,11 @@ void DtBlkFxAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer,
   }
 
   // Output Limiter
-  bool limiterEnabled = *apvts.getRawParameterValue(limiterEnabledId) > 0.5f;
-  if (limiterEnabled) {
-    float ceiling = *apvts.getRawParameterValue(limiterCeilingId);
-    float gain = *apvts.getRawParameterValue(limiterGainId);
-    float release = *apvts.getRawParameterValue(limiterReleaseId);
-
-    // Apply Input Gain
-    if (gain > 0.0f) {
-      buffer.applyGain(juce::Decibels::decibelsToGain(gain));
-    }
-
-    limiter.setThreshold(ceiling);
-    limiter.setRelease(release);
-
-    juce::dsp::AudioBlock<float> block(buffer);
-    juce::dsp::ProcessContextReplacing<float> context(block);
-    limiter.process(context);
+  if (apvts.getRawParameterValue(limiterEnabledId)->load() > 0.5f) {
+    limiter.process(buffer,
+                    apvts.getRawParameterValue(limiterGainId)->load(),
+                    apvts.getRawParameterValue(limiterCeilingId)->load(),
+                    apvts.getRawParameterValue(limiterReleaseId)->load());
   }
 }
 //==============================================================================
@@ -342,24 +327,26 @@ void DtBlkFxAudioProcessor::setStateInformation(const void* data, int sizeInByte
       apvts.replaceState(juce::ValueTree::fromXml(*xmlState));
 }
 
-void DtBlkFxAudioProcessor::pushInputSpectrogramData(const float* data, int numBins)
+void DtBlkFxAudioProcessor::SpectrumSnapshot::push(const float* data, int n)
 {
-  juce::ScopedLock lock(inputSpectrogramLock);
-  if (inputSpectrogramData.size() != numBins)
-    inputSpectrogramData.resize(numBins);
+  const juce::SpinLock::ScopedTryLockType tryLock(lock);
+  if (!tryLock.isLocked())
+    return;
 
-  std::memcpy(inputSpectrogramData.data(), data, numBins * sizeof(float));
-  newInputSpectrogramDataAvailable = true;
+  numBins = juce::jmin(n, (int)bins.size());
+  std::copy(data, data + numBins, bins.begin());
+  fresh = true;
 }
 
-void DtBlkFxAudioProcessor::pushOutputSpectrogramData(const float* data, int numBins)
+int DtBlkFxAudioProcessor::SpectrumSnapshot::pull(std::vector<float>& dst)
 {
-  juce::ScopedLock lock(outputSpectrogramLock);
-  if (outputSpectrogramData.size() != numBins)
-    outputSpectrogramData.resize(numBins);
+  const juce::SpinLock::ScopedLockType scopedLock(lock);
+  if (!fresh)
+    return 0;
 
-  std::memcpy(outputSpectrogramData.data(), data, numBins * sizeof(float));
-  newOutputSpectrogramDataAvailable = true;
+  dst.assign(bins.begin(), bins.begin() + numBins);
+  fresh = false;
+  return numBins;
 }
 
 //==============================================================================

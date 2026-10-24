@@ -20,6 +20,7 @@
 #pragma once
 
 #include "DtBlkFx.hpp"
+#include "OutputLimiter.h"
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <juce_dsp/juce_dsp.h>
 
@@ -64,27 +65,23 @@ public:
   juce::AudioProcessorValueTreeState apvts;
   static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
 
-  // FIFO for spectrogram data
-  // Using a simple lock-free FIFO for now. In a real app, use AbstractFifo.
-  // We'll just expose a method to push data.
-  void pushInputSpectrogramData(const float* data, int numBins);
-  void pushOutputSpectrogramData(const float* data, int numBins);
+  // Latest spectrum (power per FFT bin, L+R) for the editor's spectrograms. The audio thread
+  // only try-locks, so a busy UI can never stall it; a skipped frame is harmless.
+  struct SpectrumSnapshot {
+    juce::SpinLock lock;
+    std::vector<float> bins; // preallocated to the largest FFT size
+    int numBins = 0;
+    bool fresh = false;
 
-  // Accessor for the editor to pull data
-  // This is a simplification. Ideally, use a proper FIFO class.
-  // For this port, we'll use a shared buffer protected by a lock (or atomic flag)
-  // or just a raw pointer if we accept some tearing (visual only).
-  // Let's use a simple atomic flag for "new data available"
-  std::vector<float> inputSpectrogramData;
-  std::atomic<bool> newInputSpectrogramDataAvailable{false};
-  juce::CriticalSection inputSpectrogramLock;
+    void push(const float* data, int n);
+    // copy into dst if there is new data since the last pull, returns number of bins or 0
+    int pull(std::vector<float>& dst);
+  };
 
-  std::vector<float> outputSpectrogramData;
-  std::atomic<bool> newOutputSpectrogramDataAvailable{false};
-  juce::CriticalSection outputSpectrogramLock;
+  SpectrumSnapshot inputSpectrum, outputSpectrum;
 
   // Limiter
-  juce::dsp::Limiter<float> limiter;
+  OutputLimiter limiter;
 
   static constexpr auto limiterCeilingId = "limiterCeiling";
   static constexpr auto limiterGainId = "limiterGain";
